@@ -616,6 +616,20 @@ int main(int argc, char ** argv)
         if (!OpenCascStorage(i))
             continue;
 
+        // Verify that the storage actually contains locale-specific DB2 files before
+        // committing to this locale: on clients missing some locales (e. g. CN-only),
+        // a storage opened with a foreign mask still opens successfully but its root
+        // keeps no entries for files like "DBFilesClient\Map.db2" (FILE_NOT_FOUND).
+        {
+            DB2CascFileSource source(CascStorage, "DBFilesClient\\Map.db2");
+            if (!source.IsOpen())
+            {
+                printf("Locale %s does not contain DBFilesClient\\Map.db2, skipping it.\n", localeNames[i]);
+                CascStorage.reset();
+                continue;
+            }
+        }
+
         FirstLocale = i;
         uint32 build = CASC::GetBuildNumber(CascStorage);
         if (!build)
