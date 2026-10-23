@@ -42,6 +42,17 @@ void AddObjectHelper(Cell const &cell, Map* map, T *obj)
         map->AddToActive(obj);
 }
 
+void AddObjectHelper(Cell const &cell, Map* map, Creature* obj)
+{
+    map->AddToGrid(obj, cell);
+
+    obj->AddToWorld();
+    if (obj->isActiveObject())
+        map->AddToActive(obj);
+
+    map->AddBattlePet(obj);
+}
+
 template <typename T>
 uint32 LoadHelper(CellGuidSet const &cellGuids, Cell const &cell, Map *map)
 {

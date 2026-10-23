@@ -63,7 +63,8 @@ public:
     bool IsWildPet(Creature* creature);
     std::shared_ptr<BattlePetInstance> GetWildBattlePet(Creature* creature);
 
-    void LeaveBattle(Creature* creature, bool defeated);
+    void EnterInBattle(Creature* creature);
+    void LeaveBattle(Creature* creature, bool p_Defeated);
 
     WildPetPoolTemplate* GetWildPetTemplate(uint32 mapId, uint32 zoneId, uint32 entry);
     bool IsBattlePet(uint32 entry);

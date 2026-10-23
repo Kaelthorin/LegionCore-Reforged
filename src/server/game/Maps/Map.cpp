@@ -5056,6 +5056,9 @@ void Map::RemoveBattlePet(Creature* creature)
 void Map::PopulateBattlePet(uint32 diff)
 {
     uint32 _s = getMSTime();
+
+    size_t poolsActive = 0, poolsNoTemplate = 0, hostsWaitingNoTemplate = 0;
+
     for (auto& zone : m_wildBattlePetPool)
     {
         uint16 zoneId = zone.first;
@@ -5064,7 +5067,13 @@ void Map::PopulateBattlePet(uint32 diff)
             uint32 entry = iter.first;
             WildPetPoolTemplate* petTemplate = sWildBattlePetMgr->GetWildPetTemplate(GetId(), zoneId, entry);
             if (!petTemplate)
+            {
+                ++poolsNoTemplate;
+                hostsWaitingNoTemplate += iter.second.ToBeReplaced.size();
                 continue;
+            }
+
+            ++poolsActive;
 
             sWildBattlePetMgr->Populate(petTemplate, &iter.second);
         }

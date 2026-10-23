@@ -638,6 +638,15 @@ void PetBattleAura::Process(PetBattle* petBattle)
         return;
     }
 
+    // A pet that died must no longer be affected by lingering effects: expire
+    // the aura instead of ticking it on the corpse.
+    if (!Expired && TargetPetID < MAX_PETBATTLE_TEAM * MAX_PETBATTLE_SLOTS
+        && petBattle->Pets[TargetPetID] && !petBattle->Pets[TargetPetID]->IsAlive())
+    {
+        Expire(petBattle);
+        return;
+    }
+
     if (auto abilityInfo = sBattlePetAbilityStore.LookupEntry(AbilityID))
     {
         PetBattleAbilityTurn abilityTurn;
@@ -744,27 +753,26 @@ bool PetBattleTeam::Update()
             return true;
         }
 
-        if (availablesPets.size() == 1)
+        // A dead front pet must never stay in front: the first alive pet steps up even for the
+        // player team (only PVE opponents pick at random). Without this the dead pet stayed
+        // targetable (extra hit on a dead pet) and no replacement ever happened.
+        uint32 replacement = availablesPets[0];
+        if (thisTeamID == PETBATTLE_PVE_TEAM_ID && availablesPets.size() > 1)
+            replacement = availablesPets[urand(0, availablesPets.size() - 1)];
+
+        PetBattleInstance->SwapPet(thisTeamID, replacement);
+
+        QueuePacket(PlayerGuid, PetBattleInstance->BuildReplacementMadePacket());
+
+        if (PetBattleInstance->BattleType == PETBATTLE_TYPE_PVE && thisTeamID == PETBATTLE_PVE_TEAM_ID)
         {
-            PetBattleInstance->SwapPet(thisTeamID, availablesPets[0]);
-
-            QueuePacket(PlayerGuid, PetBattleInstance->BuildReplacementMadePacket());
-
-            if (PetBattleInstance->BattleType == PETBATTLE_TYPE_PVE && thisTeamID == PETBATTLE_PVE_TEAM_ID)
-                PetBattleInstance->Teams[PETBATTLE_TEAM_1]->Ready = true;
-            else if (PetBattleInstance->BattleType == PETBATTLE_TYPE_PVP_DUEL || PetBattleInstance->BattleType == PETBATTLE_TYPE_PVP_MATCHMAKING)
-            {
-                PetBattleInstance->Teams[!thisTeamID]->Ready = true;
-                Ready = true;
-            }
-        }
-        else if (PetBattleInstance->BattleType == PETBATTLE_TYPE_PVE && thisTeamID == PETBATTLE_PVE_TEAM_ID)
-        {
-            PetBattleInstance->SwapPet(thisTeamID, availablesPets[urand(0, availablesPets.size() - 1)]);
-
-            QueuePacket(PlayerGuid, PetBattleInstance->BuildReplacementMadePacket());
-
             PetBattleInstance->Teams[PETBATTLE_TEAM_1]->Ready = true;
+            if (availablesPets.size() > 1)
+                Ready = true;
+        }
+        else if (PetBattleInstance->BattleType == PETBATTLE_TYPE_PVP_DUEL || PetBattleInstance->BattleType == PETBATTLE_TYPE_PVP_MATCHMAKING)
+        {
+            PetBattleInstance->Teams[!thisTeamID]->Ready = true;
             Ready = true;
         }
     }
@@ -794,6 +802,22 @@ void PetBattleTeam::DoCasts(uint32 turn0ProcCond)
 {
     if (ActiveAbilityId && PetBattleInstance->Pets[ActivePetID]->IsAlive() && PetBattleInstance->Pets[ActivePetID]->CanAttack())
     {
+        // A pet killed this round must not be struck again. Drop this side's pending action during
+        // the main phase; skip round-start/end proc phases (they would re-fire the pending ability
+        // onto the dead pet).
+        auto const opponentFrontID = PetBattleInstance->Teams[PetBattleInstance->Teams[PETBATTLE_TEAM_1] == this ? PETBATTLE_TEAM_2 : PETBATTLE_TEAM_1]->ActivePetID;
+        if (opponentFrontID != PETBATTLE_NULL_ID && !PetBattleInstance->Pets[opponentFrontID]->IsAlive())
+        {
+            if (turn0ProcCond == PETBATTLE_ABILITY_TURN0_PROC_ON_NONE)
+            {
+                ActiveAbilityId = 0;
+                activeAbilityTurn = 0;
+                activeAbilityTurnMax = 0;
+            }
+
+            return;
+        }
+
         if (turn0ProcCond == PETBATTLE_ABILITY_TURN0_PROC_ON_NONE && PetBattleInstance->PetXDied.empty())
             PetBattleInstance->Cast(ActivePetID, ActiveAbilityId, activeAbilityTurn, turn0ProcCond, PETBATTLE_CAST_TRIGGER_NONE);
         else
